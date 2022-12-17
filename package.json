@@ -1,0 +1,26 @@
+{
+  "name": "mint-to-gsheet",
+  "version": "1.0.0",
+  "description": "Populate a Google Sheet with financial data using the Mint API",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dcarr178/mint-to-gsheet.git"
+  },
+  "author": "David Carr",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/dcarr178/mint-to-gsheet/issues"
+  },
+  "homepage": "https://github.com/dcarr178/mint-to-gsheet#readme",
+  "devDependencies": {
+    "@google/clasp": "^2.4.2",
+    "@types/google-apps-script": "^1.0.56",
+    "@types/typescript": "^2.0.0",
+    "gts": "^3.1.1",
+    "typescript": "^4.9.4"
+  }
+}
