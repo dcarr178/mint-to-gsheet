@@ -556,3 +556,18 @@ export interface WorksheetValues {
     },
     numColumns: number
 }
+
+export interface FieldDictionary {
+    [colNum: number]: {
+        expression: string,
+        type: "string"|"date",
+        update: boolean,
+        addNew: boolean
+    }
+}
+
+export interface TransposedRow {
+    name: string
+    value: any
+    id: string
+}

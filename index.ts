@@ -13,213 +13,71 @@ may branch or fork the GitHub project, make code changes, and deploy them to you
 
 For reference https://developers.google.com/apps-script/reference/spreadsheet/spreadsheet-app
 */
+
+// access the current Google Sheet
 const workbook = SpreadsheetApp.getActiveSpreadsheet()
 
 const globals = {
-    cellImportAccounts: workbook.getRangeByName("import_accounts"),
-    cellImportCredit: workbook.getRangeByName("import_credit"),
-    cellImportInvestments: workbook.getRangeByName("import_investments"),
-    cellImportTransactions: workbook.getRangeByName("import_transactions"),
-    cellImportLoans: workbook.getRangeByName("import_loans"),
-    cellSessionKey: workbook.getRangeByName("session_key"),
-    cellSlackUrl: workbook.getRangeByName("slack_url"),
-    cellUpdateTransactionsAfter: workbook.getRangeByName("update_transactions_after"),
-    cellWorkbookUpdated: workbook.getRangeByName("workbook_updated"),
-    sheetInstructions: workbook.getSheetByName("Instructions"),
-    sheetNameAccounts: "Accounts",
-    sheetNameInvestments: "Investments",
-    sheetNameTransactions: "Transactions",
-    sheetNameCreditAccounts: "Loans",
-    sheetNameCreditReport: "Credit",
-    
+    // reference all the named ranges in one place to make changes easier
+    namedRange: {
+        ImportAccounts: workbook.getRangeByName("import_accounts"),
+        ImportCredit: workbook.getRangeByName("import_credit"),
+        ImportInvestments: workbook.getRangeByName("import_investments"),
+        ImportTransactions: workbook.getRangeByName("import_transactions"),
+        ImportLoans: workbook.getRangeByName("import_loans"),
+        SessionKey: workbook.getRangeByName("session_key"),
+        SlackUrl: workbook.getRangeByName("slack_url"),
+        UpdateTransactionsAfter: workbook.getRangeByName("update_transactions_after"),
+        WorkbookUpdated: workbook.getRangeByName("workbook_updated"),
+        FastUpdate: workbook.getRangeByName("fast_update"),
+    },
+    sheetName: {
+        Accounts: workbook.getRangeByName("sheet_accounts").getValue(),
+        Credit: workbook.getRangeByName("sheet_credit").getValue(),
+        Investments: workbook.getRangeByName("sheet_investments").getValue(),
+        Loans: workbook.getRangeByName("sheet_loans").getValue(),
+        Transactions: workbook.getRangeByName("sheet_transactions").getValue(),
+    },
+    sheet: {
+        Instructions: workbook.getSheetByName("Instructions"),
+    }
 }
 
 const mintData = {
     getAccounts: () => {
-        const columns = [
-            "Account",
-            "Balance",
-            "Bank",
-            "Last Updated",
-            "ID",
-        ]
-
-        // create worksheet
-        const sheetName = globals.sheetNameAccounts
-        const worksheet = workbook.getSheetByName(sheetName) || workbook.insertSheet(sheetName)
-        const data = googleSheet.readWorksheet(worksheet)
-
-        // get new values from Mint
-        workbook.toast("Getting account balances from Mint", "Mint")
+        workbook.toast("Getting account balances", "Mint")
         const mintUrl = "https://mint.intuit.com/pfm/v1/accounts?offset=0&limit=1000"
         const apiResponse: types.MintAccountAPI.apiResponse = api.mint(mintUrl)
-        for (const mintAccount of apiResponse.Account) {
-            if (!mintAccount.isActive) continue
-            const key = `a${mintAccount.id}`
-            let column = 0
-            if (!(key in data.values)) {
-                data.values[key] = Array(data.numColumns)
-            }
-            data.values[key][column++] = mintAccount.name
-            data.values[key][column++] = mintAccount.currentBalance
-            data.values[key][column++] = mintAccount.fiName
-            data.values[key][column++] = new Date(mintAccount.metaData.lastUpdatedDate)
-            data.values[key][column++] = key
-        }
-
-        googleSheet.writeWorksheet(worksheet, data, columns)
+        utils.updateSheet(apiResponse.Account, globals.sheetName.Accounts)
     },
-    getCreditReport: () => {
-        const columns = null
-
-        // create worksheet
-        const sheetName = globals.sheetNameCreditReport
-        const worksheet = workbook.getSheetByName(sheetName) || workbook.insertSheet(sheetName)
-        const data: types.WorksheetValues = {
-            values: {},
-            numColumns: 2
-        }
-
-        // get new values from Mint
-        workbook.toast("Getting credit report", "Mint")
+    getCredit: () => {
         const mintUrl = "https://credit.finance.intuit.com/v1/creditreports?limit=1"
-        const item: types.MintCreditReportsAPI.apiResponse = api.mint(mintUrl)
-        let row = 0;
-        utils.addKeyValue(data, row++, "my key", "my value")
-        utils.addKeyValue(data, row++, "my key1", "my value1")
-        utils.addKeyValue(data, row++, "my key2", "my value2")
-
-        googleSheet.writeWorksheet(worksheet, data, columns)
-
+        workbook.toast("Getting credit report", "Mint")
+        const creditReport: types.MintCreditReportsAPI.apiResponse = api.mint(mintUrl)
+        const reports = creditReport.vendorReports
+        if (!reports.length) return
+        const items = utils.transpose(reports[0].creditReportList[0])
+        utils.updateSheet(items, globals.sheetName.Credit, "item.id", "no-sort")
     },
     getInvestments: () => {
-        const columns = [
-            "Investment",
-            "Current Price",
-            "Quantity",
-            "Value",
-            "Average Cost",
-            "Cost Basis",
-            "Gain (Loss)",
-            "Description",
-            "Asset Type",
-            "Last Updated",
-            "ID",
-        ]
-
-        // create worksheet
-        const sheetName = globals.sheetNameInvestments
-        const worksheet = workbook.getSheetByName(sheetName) || workbook.insertSheet(sheetName)
-        const data = googleSheet.readWorksheet(worksheet)
-
-        // get new values from Mint
-        workbook.toast("Getting investment data from Mint", "Mint")
+        workbook.toast("Getting investments", "Mint")
         const mintUrl = "https://mint.intuit.com/pfm/v1/investments"
         const apiResponse: types.MintInvestmentAPI.apiResponse = api.mint(mintUrl)
-        for (const item of apiResponse.Investment) {
-            const key = `a${item.id}`
-            let column = 0;
-            if (!(key in data.values)) {
-                data.values[key] = Array(data.numColumns)
-            }
-            data.values[key][column++] = item.symbol || item.description
-            data.values[key][column++] = item.currentPrice
-            data.values[key][column++] = item.currentQuantity
-            data.values[key][column++] = item.currentValue
-            const pricePaid = Math.abs(item.averagePricePaid)
-            data.values[key][column++] = pricePaid
-            const costBasis = pricePaid * item.currentQuantity
-            data.values[key][column++] = costBasis
-            data.values[key][column++] = costBasis > 0 ? (item.currentValue / costBasis) - 1 : 0
-            data.values[key][column++] = item.description
-            data.values[key][column++] = item.holdingType
-            data.values[key][column++] = new Date(item.metaData.lastUpdatedDate)
-            data.values[key][column++] = key
-        }
-
-        googleSheet.writeWorksheet(worksheet, data, columns)
-
+        utils.updateSheet(apiResponse.Investment, globals.sheetName.Investments)
     },
     getLoans: () => {
-        const columns = [
-            "Lender",
-            "Loan Type",
-            "Current Balance",
-            "Credit Limit",
-            "Payment Amount",
-            "Months",
-            "Payments Made",
-            "Past Due",
-            "Late Payments",
-            "Account Status",
-            "Opened",
-            "Last Payment",
-            "Max Credit Used",
-            "Last Updated",
-            "ID"
-        ]
-
-        // create worksheet
-        const sheetName = globals.sheetNameCreditAccounts
-        const worksheet = workbook.getSheetByName(sheetName) || workbook.insertSheet(sheetName)
-        const data = googleSheet.readWorksheet(worksheet)
-
-        // get new values from Mint
-        workbook.toast("Getting loans from Mint", "Mint")
+        workbook.toast("Getting loans", "Mint")
         const mintUrl = "https://credit.finance.intuit.com/v1/creditreports/0/tradelines"
         const apiResponse: types.MintCreditAccountsAPI.apiResponse = api.mint(mintUrl)
-        for (const item of apiResponse.tradeLine) {
-            const key = `a${item.id}`
-            let column = 0;
-            if (!(key in data.values)) {
-                data.values[key] = Array(data.numColumns)
-            }
-            data.values[key][column++] = item.creditorName // Lender
-            data.values[key][column++] = item.typeOfAccount.description // Loan Type
-            data.values[key][column++] = item.currentBalance // Current Balance
-            data.values[key][column++] = item.creditLimit // Credit Limit
-            data.values[key][column++] = item.monthlyPaymentAmount // Payment Amount
-            data.values[key][column++] = item.termsDuration // Months
-            data.values[key][column++] = item.detailedPaymentHistories.totalPaymentCount // Payments Made
-            data.values[key][column++] = item.pastDueAmount // Amount Past Due
-            data.values[key][column++] = item.detailedPaymentHistories.latePaymentCount // Late Payments
-            data.values[key][column++] = item.accountCondition // Account Status
-            data.values[key][column++] = new Date(item.dateOpened || "2000-01-01").toISOString().substring(0, 10) // Date Opened
-            data.values[key][column++] = new Date(item.dateOfLastPayment || item.dateOpened).toISOString().substring(0, 10) // Last Payment
-            data.values[key][column++] = item.highCreditAmount // Max Credit Used
-            data.values[key][column++] = item.dateReported // Last Updated
-            data.values[key][column++] = key // ID
-        }
-
-        googleSheet.writeWorksheet(worksheet, data, columns, 11, true)
-
+        utils.updateSheet(apiResponse.tradeLine, globals.sheetName.Loans)
     },
     getTransactions: () => {
-        const columns = [
-            "My Category",
-            "My Description",
-            "Date",
-            "Amount",
-            "Account",
-            "Month",
-            "Original Category",
-            "Original Description",
-            "Last Updated",
-            "ID",
-        ]
-
-        // create worksheet
-        const sheetName = globals.sheetNameTransactions
-        const worksheet = workbook.getSheetByName(sheetName) || workbook.insertSheet(sheetName)
-        const data = googleSheet.readWorksheet(worksheet)
-
-        // get new values from Mint
-        workbook.toast("Getting transactions from Mint", "Mint")
+        workbook.toast("Getting transactions", "Mint")
         const mintUrl = "https://mint.intuit.com/pfm/v1/transactions/search"
         const tomorrow = new Date()
         tomorrow.setDate(tomorrow.getDate() + 1)
         const endDate = tomorrow.toISOString().substring(0, 10)
-        const startDate = (new Date(globals.cellUpdateTransactionsAfter.getValue())).toISOString().substring(0, 10)
+        const startDate = (new Date(globals.namedRange.UpdateTransactionsAfter.getValue())).toISOString().substring(0, 10)
         const params = {
             limit: 50000,
             offset: 0,
@@ -232,35 +90,14 @@ const mintData = {
             "sort": "DATE_DESCENDING"
         }
         const apiResponse: types.MintTransactionAPI.apiResponse = api.mint(mintUrl, "post", params)
-        for (const item of apiResponse.Transaction) {
-            if (item.isPending) continue
-            const key = `a${item.id}`
-            let column = 0;
-            if (!(key in data.values)) {
-                data.values[key] = Array(data.numColumns)
-                data.values[key][column++] = item.category.name
-                data.values[key][column++] = item.description
-            }
-            column = 2
-            data.values[key][column++] = new Date(item.date)
-            data.values[key][column++] = item.amount
-            data.values[key][column++] = item.accountRef.name
-            data.values[key][column++] = item.date.substring(0, 7)
-            data.values[key][column++] = item.category.name
-            data.values[key][column++] = item.description
-            data.values[key][column++] = item.metaData.lastUpdatedDate
-            data.values[key][column++] = key
-        }
-
-        googleSheet.writeWorksheet(worksheet, data, columns, 2)
-
+        utils.updateSheet(apiResponse.Transaction, globals.sheetName.Transactions)
     },
     getAll: () => {
-        if (globals.cellImportAccounts.getValue()) mintData.getAccounts()
-        if (globals.cellImportInvestments.getValue()) mintData.getInvestments()
-        if (globals.cellImportTransactions.getValue()) mintData.getTransactions()
-        if (globals.cellImportLoans.getValue()) mintData.getLoans()
-        if (globals.cellImportCredit.getValue()) mintData.getCreditReport()
+        if (globals.namedRange.ImportAccounts.getValue()) mintData.getAccounts()
+        if (globals.namedRange.ImportCredit.getValue()) mintData.getCredit()
+        if (globals.namedRange.ImportInvestments.getValue()) mintData.getInvestments()
+        if (globals.namedRange.ImportLoans.getValue()) mintData.getLoans()
+        if (globals.namedRange.ImportTransactions.getValue()) mintData.getTransactions()
         return "Workbook data updated"
     },
 }
@@ -270,69 +107,49 @@ const googleSheet = {
         SpreadsheetApp.getUi()
             .createMenu('Mint')
             .addItem('Update accounts', 'mintData.getAccounts')
+            .addItem('Update credit', 'mintData.getCredit')
             .addItem('Update investments', 'mintData.getInvestments')
-            .addItem('Update transactions', 'mintData.getTransactions')
             .addItem('Update loans', 'mintData.getLoans')
-            .addItem('Update credit report', 'mintData.getLoans')
-            .addItem('Update ALL', 'mintData.updateWorkbook')
+            .addItem('Update transactions', 'mintData.getTransactions')
+            .addItem('Update ALL', 'mintData.getAll')
             .addToUi();
     },
-    readWorksheet: (worksheet: GoogleAppsScript.Spreadsheet.Sheet): types.WorksheetValues => {
-        const valuesArray = worksheet.getDataRange().getValues()
-        const numColumns = valuesArray[0].length
-        const values = {}
-        for (let i = 1; i < valuesArray.length; i++) {
-            const row = valuesArray[i]
-            const key = row[row.length - 1]
-            values[key] = row
-        }
-        return {
-            values,
-            numColumns
-        }
+    clearWorksheetData: (sheetName: string) => {
+        const sheet = workbook.getSheetByName(sheetName)
+        if (!sheet) return
+        const firstDataRow = (sheet.getFrozenRows() || 1) + 1
+        const lastDataRow = sheet.getLastRow()
+        const lastDataColumn = sheet.getLastColumn()
+        sheet.getRange(firstDataRow, 1, lastDataRow, lastDataColumn).clearContent()
+        sheet.getRange(firstDataRow, 1).activate()
     },
-    writeWorksheet: (worksheet: GoogleAppsScript.Spreadsheet.Sheet, data: types.WorksheetValues, columns: string[], sortColumn: number = 0, sortDescending = false) => {
-        // put items in order
-        const itemArray = Object.keys(data.values).map(key => data.values[key])
-        itemArray.sort((a, b) => {
-            let compare1 = a[sortColumn]
-            let compare2 = b[sortColumn]
-            if (sortDescending) {
-                compare1 = b[sortColumn]
-                compare2 = a[sortColumn]
-            }
-            console.log(`Compare ${compare1} to ${compare2} ${typeof compare1}`)
-            if (typeof compare1 === 'string' || compare2 instanceof String) {
-                return compare1.toLowerCase().localeCompare(compare2.toLowerCase())
-            }
-            return compare1 < compare2
-        })
+    clearWorkbookData: () => {
+        googleSheet.clearWorksheetData(globals.sheetName.Accounts)
+        googleSheet.clearWorksheetData(globals.sheetName.Investments)
+        googleSheet.clearWorksheetData(globals.sheetName.Loans)
+        googleSheet.clearWorksheetData(globals.sheetName.Transactions)
 
-        // add columns as first item in list
-        if (columns) {
-            const columnRow = Array(data.numColumns)
-            for (let i = 0; i < columns.length; i++) {
-                columnRow[i] = columns[i]
-            }
-            itemArray.unshift(columnRow)
-        }
+        // for transposed worksheets we only want to clear column B
+        const sheet = workbook.getSheetByName(globals.sheetName.Credit)
+        const firstDataRow = (sheet.getFrozenRows() || 1) + 1
+        const lastDataRow = sheet.getLastRow()
+        sheet.getRange(firstDataRow, 2, lastDataRow, 1).clearContent()
+        sheet.getRange(firstDataRow, 1).activate()
 
-        // write list to worksheet
-        worksheet.getRange(
-            1,
-            1,
-            itemArray.length,
-            itemArray[0].length
-        ).setValues(itemArray)
-    },
-    reset: () => {
-        // TODO write reset function to clear data from the workbook
+        // clear workbook and cell colors
+        globals.namedRange.WorkbookUpdated.setValue("Never")
+        globals.namedRange.WorkbookUpdated.setBackground(null)
+        globals.namedRange.SessionKey.setValue("")
+        globals.namedRange.SlackUrl.setValue("")
+        globals.sheet.Instructions.setTabColor(null)
+        globals.sheet.Instructions.getRange(1, 1).activate()
+
     }
 }
 
 const api = {
     mint: (url, method: HttpMethod = "get", payload: any = null): any => {
-        const sessionKey = globals.cellSessionKey.getValue()
+        const sessionKey = globals.namedRange.SessionKey.getValue()
 
         // only run if session key exists
         if (!sessionKey) throw "Unable to update Mint session because the workbook contains no session credentials. Please log into Mint and paste your session credentials into this workbook on the Instructions worksheet."
@@ -350,32 +167,29 @@ const api = {
                 params.payload = JSON.stringify(payload)
                 params.contentType = "application/json"
             }
-            // console.log(UrlFetchApp.getRequest(url, params))
-            // throw "Stop here"
             const apiResults = UrlFetchApp.fetch(url, params);
             const response = JSON.parse(apiResults.getContentText())
 
             // update last updated datetime
             const now = new Date()
-            globals.cellWorkbookUpdated.setValue(now)
+            globals.namedRange.WorkbookUpdated.setValue(now)
 
             // set cell and tab colors
             const greenColor = "#00ff00"
-            globals.sheetInstructions.setTabColor(greenColor)
-            globals.cellWorkbookUpdated.setBackground(greenColor)
+            globals.sheet.Instructions.setTabColor(greenColor)
+            globals.namedRange.WorkbookUpdated.setBackground(greenColor)
 
             return response
         } catch (error) {
             console.log(error)
 
             // assume the session key is invalid and delete it, so we don't keep hammering the Mint api
-            // todo uncomment this after i'm done testing
-            // cellSessionKey.setValue("")
+            globals.namedRange.SessionKey.setValue("")
 
             // set cell and tab colors
             const redColor = "#FF0000"
-            globals.cellWorkbookUpdated.setBackground(redColor)
-            globals.sheetInstructions.setTabColor(redColor)
+            globals.namedRange.WorkbookUpdated.setBackground(redColor)
+            globals.sheet.Instructions.setTabColor(redColor)
 
             const response = "Invalid Mint session credentials"
             slack.post(response)
@@ -386,7 +200,7 @@ const api = {
 
 const slack = {
     post: (message: string) => {
-        const slackUrl = globals.cellSlackUrl.getValue()
+        const slackUrl = globals.namedRange.SlackUrl.getValue()
         if (slackUrl) {
             // post message to slack webhook url
             UrlFetchApp.fetch(slackUrl, {
@@ -398,12 +212,191 @@ const slack = {
 }
 
 const utils = {
-    addKeyValue: (obj: types.WorksheetValues, rowNum: number, key: any, value: any) => {
-        const index = String(rowNum).padStart(8, "0")
-        obj.values[index] = []
-        obj.values[index][0] = key
-        obj.values[index][1] = value
+    flattenObj: ob => {
+        const result = {};
+        for (const i in ob) {
+            if ((typeof ob[i]) === 'object' && !Array.isArray(ob[i])) {
+                const temp = utils.flattenObj(ob[i]);
+                for (const j in temp) {
+                    result[i + '.' + j] = temp[j];
+                }
+            } else {
+                result[i] = ob[i];
+            }
+        }
+        return result
     },
+    updateSheet: (items: any, sheetName: string, key = "item.id", defaultSortField = "name", defaultSortDirection = "A") => {
+
+        // create worksheet
+        let worksheet = workbook.getSheetByName(sheetName)
+        let writeHeader = false
+        if (!worksheet) {
+            worksheet = workbook.insertSheet(sheetName)
+            worksheet.setFrozenRows(2)
+            writeHeader = true
+        }
+        const headerRowNum = worksheet.getFrozenRows() || 2
+        let numRows = worksheet.getLastRow() || 2
+        let numCols = worksheet.getLastColumn() || 1
+        const fields: types.FieldDictionary = {}
+        const keys = {}
+        let keyColNum = 1
+        const sortArray = []
+        let addNew: boolean
+        let foundNew = false
+        const fastUpdate = globals.namedRange.FastUpdate.getValue()
+        const fastUpdateValues = worksheet.getRange(headerRowNum + 1, 1, numRows, numCols).getValues()
+
+        // write new values
+        let itemNum = 0
+        for (const item of items) {
+            itemNum++
+
+            // create header row if needed
+            if (writeHeader) {
+                const flat = utils.flattenObj(item)
+                let numCols = 0
+                for (const field in flat) {
+                    numCols++
+                    const noteCell = worksheet.getRange(1, numCols)
+                    const labelCell = worksheet.getRange(2, numCols)
+                    const fieldName = `item.${field}`
+                    if (fieldName == key) keyColNum = numCols
+                    let note = fieldName
+                    if (field == defaultSortField) {
+                        note += "||sort" + defaultSortDirection
+                        sortArray.push({column: numCols, ascending: true})
+                    } else if (field.includes("Date")) {
+                        note += "||date"
+                    }
+                    labelCell.setValue(fieldName)
+                    // labelCell.setNote(note)
+                    noteCell.setValue(note)
+                    fields[numCols] = {
+                        expression: fieldName,
+                        type: "string",
+                        update: true,
+                        addNew: true
+                    }
+                }
+                writeHeader = false
+            }
+
+            // things to only do once after we know what the rows are
+            if (itemNum == 1) {
+
+                // scan header rows to find fields to populate
+                for (let colNum = 1; colNum <= numCols; colNum++) {
+                    const note = worksheet.getRange(headerRowNum - 1, colNum).getValue().trim()
+                    if (note) {
+                        const [field, paramString] = note.split("||")
+                        const params = paramString ? paramString.split(",") : []
+                        fields[colNum] = {
+                            expression: field,
+                            type: "string",
+                            update: true,
+                            addNew: true
+                        }
+                        if (params.includes("sortA")) {
+                            sortArray.push({column: colNum, ascending: true})
+                        }
+                        if (params.includes("sortD")) {
+                            sortArray.push({column: colNum, ascending: false})
+                        }
+                        if (params.includes("date")) {
+                            fields[colNum].type = "date"
+                        }
+                        if (params.includes("Date")) {
+                            fields[colNum].type = "date"
+                        }
+                        if (params.includes("no-update")) {
+                            fields[colNum].update = false
+                        }
+                        if (params.includes("no-new")) {
+                            fields[colNum].addNew = false
+                        }
+                        if (field == key) {
+                            keyColNum = colNum
+                            addNew = fields[colNum].addNew
+                        }
+                    }
+                }
+
+                // create key dictionary
+                for (let rowNum = headerRowNum + 1; rowNum <= numRows; rowNum++) {
+                    const cellKeyValue = worksheet.getRange(rowNum, keyColNum).getValue()
+                    if (cellKeyValue) keys[cellKeyValue] = rowNum
+                }
+            }
+
+            // add a char to the beginning of an id so that the sheet interprets it as a string not a number
+            eval(`${key} = "a" + ${key}`)
+
+            // write updates to cells
+            const itemKey = eval(key)
+            let rowNum = 0
+            let isNew = false
+            if (itemKey in keys) {
+                rowNum = keys[itemKey]
+            } else {
+                if (addNew) {
+                    foundNew = true
+                    rowNum = ++numRows
+                    isNew = true
+
+                    if (fastUpdate) {
+                        fastUpdateValues.push(Array(numCols))
+                    } else {
+                        // add row and remove header formatting from new row
+                        worksheet.insertRowAfter(numRows + 1)
+                        const range = worksheet.getRange(rowNum, 1, rowNum, numCols)
+                        range.setBackground(null)
+                        range.setFontWeight("normal")
+                    }
+                }
+            }
+            for (const colNum in fields) {
+                const f = fields[colNum]
+                if (isNew == false && f.update == false) continue // do not update field if we are not supposed to
+                if (!rowNum) continue
+                let value = eval(f.expression)
+                // if (f.type == "date") value = (new Date(value)).toISOString().replace(/[TZ]/g, " ") // unfortunately this reports in a different timezone than the user has
+                if (f.type == "date") value = new Date(value)
+                if (fastUpdate) {
+                    // update data array and write it later
+                    fastUpdateValues[rowNum - headerRowNum - 1][parseInt(colNum) - 1] = value
+                } else {
+                    // write one cell at a time. Danger: formulas will be replaced with values
+                    worksheet.getRange(rowNum, parseInt(colNum)).setValue(value)
+                }
+            }
+        }
+
+        if (fastUpdate) {
+            // set worksheet values all at once instead of one at a time
+            worksheet.getRange(headerRowNum + 1, 1, fastUpdateValues.length, fastUpdateValues[0].length).setValues(fastUpdateValues)
+        }
+
+        // sort range
+        if (sortArray.length) {
+            if (foundNew) worksheet.insertRowAfter(numRows)
+            const sortFrom = headerRowNum + 1
+            if (numRows > sortFrom) worksheet.getRange(sortFrom, 1, numRows, numCols).sort(sortArray)
+        }
+    },
+    transpose: (obj: object): types.TransposedRow[] => {
+        const flat = utils.flattenObj(obj)
+        const items: types.TransposedRow[] = []
+        for (const key in flat) {
+            items.push({
+                name: key,
+                value: flat[key],
+                id: key,
+            })
+        }
+        return items
+    }
 }
 
 const doGet = () => {
@@ -420,6 +413,11 @@ const onOpen = () => {
     This function runs every time you open the Google Sheet.
     */
     googleSheet.createMenu()
+}
+
+// make nested functions visible to the Apps Script console if you want to run them manually
+const clearWorkbookData = () => {
+    googleSheet.clearWorkbookData()
 }
 
 // @ts-ignore
